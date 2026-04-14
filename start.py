@@ -231,8 +231,8 @@ if __name__ == '__main__':
     try:
         threading.Thread(target=tool.checkupdate).start()        
         try:
-            host = cfg.web_address.split(':')
-            http_server = WSGIServer((host[0], int(host[1])), app ,handler_class=CustomRequestHandler)
+            bind = os.getenv('BIND_ADDRESS', '0.0.0.0:9999').split(':')
+            http_server = WSGIServer((bind[0], int(bind[1])), app ,handler_class=CustomRequestHandler)
             threading.Thread(target=tool.openweb, args=(cfg.web_address,)).start()
             http_server.serve_forever()
         finally:

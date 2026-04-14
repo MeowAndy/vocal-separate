@@ -102,6 +102,13 @@ http://你的服务器IP:9999/download/test/vocals.wav
 export WEB_ADDRESS=你的公网IP:9999
 ```
 
+监听地址与返回地址分离（推荐）：
+
+```bash
+export BIND_ADDRESS=0.0.0.0:9999
+export WEB_ADDRESS=你的公网IP:9999
+```
+
 ---
 
 # API 接口
