@@ -201,7 +201,9 @@
                     }
                     let html = `<h3>${language === 'zh' ? "输出文件夹" : "Output folder"} ${res.dirname}</h3>`;
                     res.urllist.forEach((it, i) => {
-                        html += `<div class="flex-left result-list"><span class="name">${res.data[i]}</span><audio src="${it}" controls></audio></div>`;
+                        const rel = it.includes('/static/files/') ? it.split('/static/files/')[1] : '';
+                        const dl = rel ? `/download/${encodeURI(rel)}` : it;
+                        html += `<div class="flex-left result-list"><span class="name">${res.data[i]}</span><audio src="${it}" controls></audio><a class="layui-btn layui-btn-xs" style="margin-left:8px" href="${dl}" target="_blank">${language === 'zh' ? '下载' : 'Download'}</a></div>`;
                     });
                     $("#result").html(html)
                 }

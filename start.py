@@ -22,6 +22,7 @@ log.setLevel(logging.WARNING)
 
 app = Flask(__name__, static_folder=os.path.join(ROOT_DIR, 'static'), static_url_path='/static',
             template_folder=os.path.join(ROOT_DIR, 'templates'))
+app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', str(1024 * 1024 * 1024)))  # 默认 1GB
 root_log = logging.getLogger()  # Flask的根日志记录器
 root_log.handlers = []
 root_log.setLevel(logging.WARNING)
@@ -52,6 +53,8 @@ def index():
 @app.route('/upload', methods=['POST'])
 def upload():
     try:
+        if 'audio' not in request.files:
+            return jsonify({'code': 1, 'msg': 'No file part: audio'})
         # 获取上传的文件
         audio_file = request.files['audio']
         # 如果是mp4
@@ -210,6 +213,17 @@ def api():
 @app.route('/checkupdate', methods=['GET', 'POST'])
 def checkupdate():
     return jsonify({'code': 0, "msg": cfg.updatetips})
+
+
+@app.route('/download/<path:relpath>', methods=['GET'])
+def download_file(relpath):
+    safe_root = os.path.abspath(cfg.FILES_DIR)
+    abs_path = os.path.abspath(os.path.join(safe_root, relpath))
+    if not abs_path.startswith(safe_root):
+        return jsonify({'code': 1, 'msg': 'invalid path'}), 400
+    if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
+        return jsonify({'code': 1, 'msg': 'file not found'}), 404
+    return send_from_directory(os.path.dirname(abs_path), os.path.basename(abs_path), as_attachment=True)
 
 
 if __name__ == '__main__':

@@ -66,6 +66,44 @@ https://github.com/jianchang512/vocal-separate/assets/3378335/8e6b1b20-70d4-45e3
 7. 执行  `python  start.py `，等待自动打开本地浏览器窗口。
 
 
+# 公网部署补充（Mu0.0.1）
+
+## 1) 解决公网上传失败
+
+已支持通过环境变量设置上传大小上限（默认 1GB）：
+
+```bash
+export MAX_CONTENT_LENGTH=1073741824
+```
+
+> 单位为字节。建议结合反向代理（Nginx）同步设置 `client_max_body_size`。
+
+## 2) 网页直接下载分离结果
+
+网页分离结果列表中已新增“下载”按钮，支持直接下载。
+
+也可使用下载接口：
+
+```text
+GET /download/<path>
+```
+
+示例：
+
+```text
+http://你的服务器IP:9999/download/test/vocals.wav
+```
+
+## 3) 公网地址配置
+
+为保证返回链接可公网访问，启动前配置：
+
+```bash
+export WEB_ADDRESS=你的公网IP:9999
+```
+
+---
+
 # API 接口
 
 接口地址: http://127.0.0.1:9999/api
