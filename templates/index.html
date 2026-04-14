@@ -131,8 +131,15 @@
 
         <div class="layui-card ">
             <div class="layui-card-header" data-cn="历史分离记录（可回放/下载）" data-en="History separated records (play/download)"></div>
-            <div class="layui-card-body" id="history">
-                <div class="layui-font-gray" data-cn="加载中..." data-en="Loading..."></div>
+            <div class="layui-card-body">
+                <div class="flex-left" style="gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+                    <input id="historyKeyword" class="layui-input" style="max-width:280px" placeholder="输入歌曲名搜索历史记录" />
+                    <button id="historySearchBtn" class="layui-btn layui-btn-sm" data-cn="搜索" data-en="Search"></button>
+                    <button id="historyToggleBtn" class="layui-btn layui-btn-sm layui-btn-primary" data-cn="折叠历史" data-en="Collapse"></button>
+                </div>
+                <div id="history">
+                    <div class="layui-font-gray" data-cn="加载中..." data-en="Loading..."></div>
+                </div>
             </div>
         </div>
     </div>
@@ -145,6 +152,7 @@
         const d = new Date(ts * 1000);
         return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
     };
+    let historyCollapsed = true;
     window.$ = layui.$;
     if (language === 'en') {
             $("[data-en]").each(function () {
@@ -189,9 +197,10 @@
                 layer.close(layindex1);
             }
         });
-        async function loadHistory(){
+        async function loadHistory(keyword=''){
             try{
-                const res = await $.get('/history');
+                const qs = keyword ? ('?keyword=' + encodeURIComponent(keyword)) : '';
+                const res = await $.get('/history' + qs);
                 if(!res || res.code !== 0){
                     $('#history').html(`<div class='layui-font-red'>${language==='zh'?'历史记录加载失败':'Failed to load history'}</div>`);
                     return;
@@ -202,7 +211,7 @@
                 }
                 let html='';
                 res.data.forEach((row)=>{
-                    html += `<div class='result-list'><div class='layui-font-blue'>${language==='zh'?'任务':'Task'}: ${row.task} | ${fmtTime(row.mtime)}</div>`;
+                    html += `<div class='result-list' data-task='${row.task}'><div class='layui-font-blue'>${language==='zh'?'任务':'Task'}: ${row.task} | ${fmtTime(row.mtime)} <button class='layui-btn layui-btn-danger layui-btn-xs history-del' data-task='${row.task}' style='margin-left:8px'>${language==='zh'?'删除':'Delete'}</button></div>`;
                     row.items.forEach((x)=>{
                         html += `<div class="flex-left" style="margin-top:6px"><span class="name">${x.name}</span><audio src="${x.play_url}" controls></audio><a class="layui-btn layui-btn-xs" style="margin-left:8px" href="${x.download_url}" target="_blank">${language==='zh'?'下载':'Download'}</a></div>`;
                     });
@@ -214,7 +223,53 @@
             }
         }
 
+        $('#history').hide();
         loadHistory();
+
+        $('#historySearchBtn').on('click', function(){
+            loadHistory($('#historyKeyword').val().trim());
+        });
+
+        $('#historyKeyword').on('keydown', function(e){
+            if(e.key === 'Enter'){
+                e.preventDefault();
+                loadHistory($('#historyKeyword').val().trim());
+            }
+        });
+
+        $('#historyToggleBtn').on('click', function(){
+            historyCollapsed = !historyCollapsed;
+            if(historyCollapsed){
+                $('#history').hide();
+                $('#historyToggleBtn').text(language==='zh'?'展开历史':'Expand');
+            }else{
+                $('#history').show();
+                $('#historyToggleBtn').text(language==='zh'?'折叠历史':'Collapse');
+            }
+        });
+        $('#historyToggleBtn').text(language==='zh'?'展开历史':'Expand');
+
+        $('#history').on('click', '.history-del', async function(){
+            const task = $(this).data('task');
+            if(!task) return;
+            const ok = confirm((language==='zh'?'确认删除该历史记录？':'Delete this history task?') + '\n' + task);
+            if(!ok) return;
+            try{
+                const res = await $.ajax({
+                    url:'/history/delete',
+                    type:'POST',
+                    contentType:'application/json',
+                    data: JSON.stringify({task})
+                });
+                if(res && res.code === 0){
+                    loadHistory($('#historyKeyword').val().trim());
+                }else{
+                    layer.alert((res && res.msg) ? res.msg : (language==='zh'?'删除失败':'Delete failed'), {title:false});
+                }
+            }catch(e){
+                layer.alert(language==='zh'?'删除失败':'Delete failed', {title:false});
+            }
+        });
 
         // 提交事件
         form.on('submit(submit)', function (data) {

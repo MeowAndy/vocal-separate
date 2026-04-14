@@ -229,11 +229,14 @@ def download_file(relpath):
 @app.route('/history', methods=['GET'])
 def history():
     base = os.path.abspath(cfg.FILES_DIR)
+    keyword = str(request.args.get('keyword', '')).strip().lower()
     rows = []
     if os.path.isdir(base):
         for name in os.listdir(base):
             d = os.path.join(base, name)
             if not os.path.isdir(d):
+                continue
+            if keyword and keyword not in name.lower():
                 continue
             wavs = [f for f in os.listdir(d) if f.endswith('.wav')]
             if not wavs:
@@ -251,6 +254,28 @@ def history():
             rows.append({'task': name, 'mtime': mtime, 'items': items})
     rows.sort(key=lambda x: x['mtime'], reverse=True)
     return jsonify({'code': 0, 'data': rows})
+
+
+@app.route('/history/delete', methods=['POST'])
+def delete_history_task():
+    task = str((request.get_json(silent=True) or {}).get('task', '')).strip()
+    if not task:
+        task = str(request.form.get('task', '')).strip()
+    if not task:
+        return jsonify({'code': 1, 'msg': 'task required'}), 400
+
+    safe_root = os.path.abspath(cfg.FILES_DIR)
+    target = os.path.abspath(os.path.join(safe_root, task))
+    if not target.startswith(safe_root):
+        return jsonify({'code': 1, 'msg': 'invalid task'}), 400
+    if not os.path.exists(target):
+        return jsonify({'code': 1, 'msg': 'task not found'}), 404
+    if not os.path.isdir(target):
+        return jsonify({'code': 1, 'msg': 'not a directory'}), 400
+
+    import shutil
+    shutil.rmtree(target, ignore_errors=False)
+    return jsonify({'code': 0, 'msg': 'deleted'})
 
 
 if __name__ == '__main__':
