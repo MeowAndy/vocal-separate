@@ -1,2 +1,2 @@
-VERSION=10001
-version_str='Mu0.0.1'
+VERSION=10002
+version_str='Mu0.0.2'

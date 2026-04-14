@@ -226,6 +226,33 @@ def download_file(relpath):
     return send_from_directory(os.path.dirname(abs_path), os.path.basename(abs_path), as_attachment=True)
 
 
+@app.route('/history', methods=['GET'])
+def history():
+    base = os.path.abspath(cfg.FILES_DIR)
+    rows = []
+    if os.path.isdir(base):
+        for name in os.listdir(base):
+            d = os.path.join(base, name)
+            if not os.path.isdir(d):
+                continue
+            wavs = [f for f in os.listdir(d) if f.endswith('.wav')]
+            if not wavs:
+                continue
+            wavs.sort()
+            mtime = int(os.path.getmtime(d))
+            items = []
+            for w in wavs:
+                rel = f"{name}/{w}"
+                items.append({
+                    'name': w,
+                    'play_url': f'/static/files/{rel}',
+                    'download_url': f'/download/{rel}',
+                })
+            rows.append({'task': name, 'mtime': mtime, 'items': items})
+    rows.sort(key=lambda x: x['mtime'], reverse=True)
+    return jsonify({'code': 0, 'data': rows})
+
+
 if __name__ == '__main__':
     http_server = None
     try:

@@ -128,22 +128,33 @@
             <div class="layui-card-body" id="result">
             </div>
         </div>
+
+        <div class="layui-card ">
+            <div class="layui-card-header" data-cn="历史分离记录（可回放/下载）" data-en="History separated records (play/download)"></div>
+            <div class="layui-card-body" id="history">
+                <div class="layui-font-gray" data-cn="加载中..." data-en="Loading..."></div>
+            </div>
+        </div>
     </div>
 </div>
 
 <script src="/static/layui/layui.js"></script>
 <script>
     let language = '{{ language }}';
+    const fmtTime = (ts)=>{
+        const d = new Date(ts * 1000);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    };
     window.$ = layui.$;
-    if (language === 'zh') {
-            $("[data-cn]").each(function () {
-                $(this).html($(this).attr('data-cn'));
-            });
-        } else {
+    if (language === 'en') {
             $("[data-en]").each(function () {
                 $(this).html($(this).attr('data-en'));
             });
-
+        } else {
+            language = 'zh';
+            $("[data-cn]").each(function () {
+                $(this).html($(this).attr('data-cn'));
+            });
         }
     //JS
     layui.use(function () {
@@ -178,6 +189,33 @@
                 layer.close(layindex1);
             }
         });
+        async function loadHistory(){
+            try{
+                const res = await $.get('/history');
+                if(!res || res.code !== 0){
+                    $('#history').html(`<div class='layui-font-red'>${language==='zh'?'历史记录加载失败':'Failed to load history'}</div>`);
+                    return;
+                }
+                if(!res.data || !res.data.length){
+                    $('#history').html(`<div class='layui-font-gray'>${language==='zh'?'暂无历史分离记录':'No history records yet'}</div>`);
+                    return;
+                }
+                let html='';
+                res.data.forEach((row)=>{
+                    html += `<div class='result-list'><div class='layui-font-blue'>${language==='zh'?'任务':'Task'}: ${row.task} | ${fmtTime(row.mtime)}</div>`;
+                    row.items.forEach((x)=>{
+                        html += `<div class="flex-left" style="margin-top:6px"><span class="name">${x.name}</span><audio src="${x.play_url}" controls></audio><a class="layui-btn layui-btn-xs" style="margin-left:8px" href="${x.download_url}" target="_blank">${language==='zh'?'下载':'Download'}</a></div>`;
+                    });
+                    html += `</div>`;
+                });
+                $('#history').html(html);
+            }catch(e){
+                $('#history').html(`<div class='layui-font-red'>${language==='zh'?'历史记录加载失败':'Failed to load history'}</div>`);
+            }
+        }
+
+        loadHistory();
+
         // 提交事件
         form.on('submit(submit)', function (data) {
             
@@ -206,6 +244,7 @@
                         html += `<div class="flex-left result-list"><span class="name">${res.data[i]}</span><audio src="${it}" controls></audio><a class="layui-btn layui-btn-xs" style="margin-left:8px" href="${dl}" target="_blank">${language === 'zh' ? '下载' : 'Download'}</a></div>`;
                     });
                     $("#result").html(html)
+                    loadHistory();
                 }
             });
             return false; // 阻止默认 form 跳转

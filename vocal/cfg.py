@@ -3,7 +3,14 @@ import os
 import sys
 import tensorflow
 web_address = os.getenv('WEB_ADDRESS', '127.0.0.1:9999')
-LANG = "en" if locale.getdefaultlocale()[0].split('_')[0].lower() != 'zh' else "zh"
+_lang_env = os.getenv('APP_LANG', 'zh').strip().lower()
+if _lang_env in ('zh', 'en'):
+    LANG = _lang_env
+else:
+    try:
+        LANG = "en" if locale.getdefaultlocale()[0].split('_')[0].lower() != 'zh' else "zh"
+    except Exception:
+        LANG = 'zh'
 
 
 ROOT_DIR = os.getcwd()
