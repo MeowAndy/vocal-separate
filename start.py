@@ -33,7 +33,7 @@ app = Flask(__name__, static_folder=os.path.join(ROOT_DIR, 'static'), static_url
             template_folder=os.path.join(ROOT_DIR, 'templates'))
 app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', str(200 * 1024 * 1024)))  # 默认 200MB
 ALLOWED_MODELS = {x.strip() for x in os.getenv('ALLOWED_MODELS', '2stems').split(',') if x.strip()}
-MAX_AUDIO_SECONDS = int(os.getenv('MAX_AUDIO_SECONDS', '180'))
+MAX_AUDIO_SECONDS = int(os.getenv('MAX_AUDIO_SECONDS', '0'))
 PROCESS_LOCK = threading.Lock()
 
 root_log = logging.getLogger()  # Flask的根日志记录器
@@ -81,7 +81,7 @@ def validate_model_and_duration(model, wav_file):
     if model not in ALLOWED_MODELS:
         return False, f'当前服务器为 CPU 保守模式，仅开放 {", ".join(sorted(ALLOWED_MODELS))}，避免内存不足导致服务崩溃。'
     sec = probe_duration_seconds(wav_file)
-    if sec is not None and sec > MAX_AUDIO_SECONDS:
+    if MAX_AUDIO_SECONDS > 0 and sec is not None and sec > MAX_AUDIO_SECONDS:
         return False, f'当前服务器无 GPU，音频时长 {sec:.1f}s 超过限制 {MAX_AUDIO_SECONDS}s。请先裁剪到 {MAX_AUDIO_SECONDS // 60} 分钟内再分离。'
     return True, sec or 1800
 
