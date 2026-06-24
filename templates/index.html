@@ -105,8 +105,8 @@
                 <div class="layui-input-inline">
                     <select name="model">
                         <option value="2stems" data-cn="2stems(分离为2个文件)" data-en="2stems(Split into 2 files)"></option>
-                        <option value="4stems" data-cn="4stems(分离为4个文件)" data-en="4stems(Split into 4 files)"></option>
-                        <option value="5stems" data-cn="5stems(分离为5个文件)" data-en="5stems(Split into 5 files)"></option>
+                        <option value="4stems" disabled data-cn="4stems(当前服务器已禁用，防止内存不足)" data-en="4stems(disabled on this CPU server)"></option>
+                        <option value="5stems" disabled data-cn="5stems(当前服务器已禁用，防止内存不足)" data-en="5stems(disabled on this CPU server)"></option>
                     </select>
                 </div>
             </div>
@@ -120,7 +120,7 @@
                     <span class="worktype">on CPU </span>
                 {% endif %}
             </div>
-            <div class="layui-label-text layui-font-12 my-1 layui-font-gray" data-cn="比较适合钢琴、鼓、贝斯为主的音乐分离，中文音乐建议使用2stems"></div>
+            <div class="layui-label-text layui-font-12 my-1 layui-font-gray" data-cn="当前服务器为 CPU 保守模式：仅建议 2stems，单次任务约 3 分钟以内；处理时请不要重复提交。" data-en="CPU safe mode: 2stems only, audio should be under about 3 minutes; do not submit repeatedly while processing."></div>
         </form>
 
         <div class="layui-card ">
@@ -180,7 +180,7 @@
             exts: 'mp4|mp3|flac|wav|avi|mkv|mpeg|mov',
             url: '/upload', // 实际使用时改成您自己的上传接口即可。
             choose: function () {
-                layindex1 = layer.load();
+                layindex1 = layer.msg(language==='zh'?'正在处理，CPU 分离可能需要几分钟，请不要重复提交...':'Processing on CPU, this may take several minutes. Please do not submit again...', {icon:16, shade:0.2, time:0});
             },
             done: function (res) {
                 $('#preview').removeClass('layui-hide').html(`
@@ -195,6 +195,7 @@
             },
             error: function () {
                 layer.close(layindex1);
+                layer.alert(language==='zh'?'上传失败，请检查文件大小/格式。':'Upload failed. Please check file size/type.', {title:false});
             }
         });
         async function loadHistory(keyword=''){
@@ -280,7 +281,8 @@
                 return false;
             }
             // 显示填写结果，仅作演示用
-            layindex1 = layer.load();
+            layindex1 = layer.msg(language==='zh'?'正在分离，CPU 模式可能较慢，请耐心等待...':'Separating on CPU, please wait...', {icon:16, shade:0.2, time:0});
+            $('button[lay-filter=submit]').addClass('layui-btn-disabled').attr('disabled', true);
             // 此处可执行 Ajax 等操作
             $.ajax({
                 url:'/process',
@@ -289,6 +291,7 @@
                 timeout:3600000, 
                 success:function (res) {
                     layer.close(layindex1)
+                    $('button[lay-filter=submit]').removeClass('layui-btn-disabled').attr('disabled', false);
                     if (res.code !== 0) {
                         return layer.alert(res.msg, {title: false})
                     }
@@ -300,6 +303,11 @@
                     });
                     $("#result").html(html)
                     loadHistory();
+                },
+                error:function(){
+                    layer.close(layindex1);
+                    $('button[lay-filter=submit]').removeClass('layui-btn-disabled').attr('disabled', false);
+                    layer.alert(language==='zh'?'分离请求失败，可能是任务过大或服务重启，请稍后重试。':'Request failed. The task may be too large or service restarted. Please retry later.', {title:false});
                 }
             });
             return false; // 阻止默认 form 跳转

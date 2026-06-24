@@ -1,7 +1,16 @@
+import os
+# Conservative defaults for small CPU-only VPS deployments.
+os.environ.setdefault('OMP_NUM_THREADS', '1')
+os.environ.setdefault('MKL_NUM_THREADS', '1')
+os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
+os.environ.setdefault('NUMEXPR_NUM_THREADS', '1')
+os.environ.setdefault('TF_NUM_INTRAOP_THREADS', '1')
+os.environ.setdefault('TF_NUM_INTEROP_THREADS', '1')
+os.environ.setdefault('CUDA_VISIBLE_DEVICES', '')
+
 import logging
 import threading
 from flask import Flask, request, render_template, jsonify, send_from_directory
-import os
 from gevent.pywsgi import WSGIServer, WSGIHandler
 from logging.handlers import RotatingFileHandler
 
@@ -22,7 +31,11 @@ log.setLevel(logging.WARNING)
 
 app = Flask(__name__, static_folder=os.path.join(ROOT_DIR, 'static'), static_url_path='/static',
             template_folder=os.path.join(ROOT_DIR, 'templates'))
-app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', str(1024 * 1024 * 1024)))  # 默认 1GB
+app.config['MAX_CONTENT_LENGTH'] = int(os.getenv('MAX_CONTENT_LENGTH', str(200 * 1024 * 1024)))  # 默认 200MB
+ALLOWED_MODELS = {x.strip() for x in os.getenv('ALLOWED_MODELS', '2stems').split(',') if x.strip()}
+MAX_AUDIO_SECONDS = int(os.getenv('MAX_AUDIO_SECONDS', '180'))
+PROCESS_LOCK = threading.Lock()
+
 root_log = logging.getLogger()  # Flask的根日志记录器
 root_log.handlers = []
 root_log.setLevel(logging.WARNING)
@@ -47,6 +60,39 @@ def static_files(filename):
 @app.route('/')
 def index():
     return render_template("index.html",version=vocal.version_str,cuda=cfg.cuda, language=cfg.LANG,root_dir=ROOT_DIR.replace('\\', '/'))
+
+
+def probe_duration_seconds(path):
+    try:
+        p = subprocess.run(
+            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if p.returncode == 0 and p.stdout.strip():
+            return float(p.stdout.strip())
+    except Exception:
+        pass
+    return None
+
+
+def validate_model_and_duration(model, wav_file):
+    if model not in ALLOWED_MODELS:
+        return False, f'当前服务器为 CPU 保守模式，仅开放 {", ".join(sorted(ALLOWED_MODELS))}，避免内存不足导致服务崩溃。'
+    sec = probe_duration_seconds(wav_file)
+    if sec is not None and sec > MAX_AUDIO_SECONDS:
+        return False, f'当前服务器无 GPU，音频时长 {sec:.1f}s 超过限制 {MAX_AUDIO_SECONDS}s。请先裁剪到 {MAX_AUDIO_SECONDS // 60} 分钟内再分离。'
+    return True, sec or 1800
+
+
+def cleanup_failed_output(dirname):
+    try:
+        import shutil
+        if dirname and os.path.isdir(dirname):
+            shutil.rmtree(dirname, ignore_errors=True)
+    except Exception:
+        pass
 
 
 # 上传音频
@@ -107,19 +153,23 @@ def process():
         return jsonify({"code": 1, "msg": f"{wav_file} {cfg.langlist['lang5']}"})
     if not os.path.exists(os.path.join(cfg.MODEL_DIR, model, 'model.meta')):
         return jsonify({"code": 1, "msg": f"{model} {cfg.transobj['lang4']}"})
-    try:
-        p=subprocess.run(['ffprobe','-v','error','-show_entries',"format=duration",'-of', "default=noprint_wrappers=1:nokey=1", wav_file], capture_output=True)      
-        if p.returncode==0:
-            sec=float(p.stdout)  
-    except:
-        sec=1800
+    ok, sec_or_msg = validate_model_and_duration(model, wav_file)
+    if not ok:
+        return jsonify({"code": 1, "msg": sec_or_msg})
+    sec = sec_or_msg
     print(f'{sec=}')
-    separator = Separator(f'spleeter:{model}', multiprocess=False)
     dirname = os.path.join(cfg.FILES_DIR, noextname)
+    if not PROCESS_LOCK.acquire(blocking=False):
+        return jsonify({"code": 1, "msg": "当前已有分离任务在运行，请稍后再试。CPU 服务器同一时间只允许 1 个任务。"})
     try:
+        separator = Separator(f'spleeter:{model}', multiprocess=False)
         separator.separate_to_file(wav_file, destination=dirname, filename_format="{instrument}.{codec}", duration=sec)
     except Exception as e:
-        return jsonify({"code": 1, "msg": str(e)})
+        cleanup_failed_output(dirname)
+        app.logger.error(f'[process]error: {e}')
+        return jsonify({"code": 1, "msg": f"分离失败：{e}。建议使用 2stems，并缩短音频时长。"})
+    finally:
+        PROCESS_LOCK.release()
     status={
         "accompaniment":"伴奏",
         "bass":"低音",
@@ -173,21 +223,24 @@ def api():
             return jsonify({"code": 1, "msg": f"{wav_file} {cfg.langlist['lang5']}"})
         if not os.path.exists(os.path.join(cfg.MODEL_DIR, model, 'model.meta')):
             return jsonify({"code": 1, "msg": f"{model} {cfg.transobj['lang4']}"})
-        try:
-            p = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', "format=duration", '-of',
-                                "default=noprint_wrappers=1:nokey=1", wav_file], capture_output=True)
-            if p.returncode == 0:
-                sec = float(p.stdout)
-        except:
-            sec = 1800
+        ok, sec_or_msg = validate_model_and_duration(model, wav_file)
+        if not ok:
+            return jsonify({"code": 1, "msg": sec_or_msg})
+        sec = sec_or_msg
         print(f'{sec=}')
-        separator = Separator(f'spleeter:{model}', multiprocess=False)
         dirname = os.path.join(cfg.FILES_DIR, noextname)
+        if not PROCESS_LOCK.acquire(blocking=False):
+            return jsonify({"code": 1, "msg": "当前已有分离任务在运行，请稍后再试。CPU 服务器同一时间只允许 1 个任务。"})
         try:
+            separator = Separator(f'spleeter:{model}', multiprocess=False)
             separator.separate_to_file(wav_file, destination=dirname, filename_format="{instrument}.{codec}",
                                        duration=sec)
         except Exception as e:
-            return jsonify({"code": 1, "msg": str(e)})
+            cleanup_failed_output(dirname)
+            app.logger.error(f'[api]process error: {e}')
+            return jsonify({"code": 1, "msg": f"分离失败：{e}。建议使用 2stems，并缩短音频时长。"})
+        finally:
+            PROCESS_LOCK.release()
         status = {
             "accompaniment.wav":"accompaniment audio" if cfg.LANG=='en' else "伴奏",
             "bass.wav": "bass audio" if cfg.LANG=='en' else"低音",
